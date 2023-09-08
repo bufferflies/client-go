@@ -37,6 +37,7 @@ package client
 
 import (
 	"context"
+	"github.com/gogo/protobuf/proto"
 	"math"
 	"runtime/trace"
 	"sync"
@@ -129,12 +130,19 @@ func (b *batchCommandsBuilder) build(
 		b.idAlloc++
 	}
 	var req *tikvpb.BatchCommandsRequest
+	requests := make([]*tikvpb.BatchCommandsRequest_Request, len(b.requests))
+	ids := make([]uint64, len(b.requestIDs))
+	for i, req := range b.requests {
+		requests[i] = proto.Clone(req).(*tikvpb.BatchCommandsRequest_Request)
+		ids[i] = b.requestIDs[i]
+	}
 	if len(b.requests) > 0 {
 		req = &tikvpb.BatchCommandsRequest{
-			Requests:   b.requests,
-			RequestIds: b.requestIDs,
+			Requests:   requests,
+			RequestIds: ids,
 		}
 	}
+
 	return req, b.forwardingReqs
 }
 

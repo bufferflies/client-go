@@ -38,6 +38,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"github.com/pingcap/log"
 	"math"
 	"math/rand"
 	"strconv"
@@ -1304,6 +1305,10 @@ func (s *RegionRequestSender) SendReqCtx(
 	retryTimes int,
 	err error,
 ) {
+	if req.Type == tikvrpc.CmdCop {
+		log.Info("send req ctx", zap.Duration("timeout", timeout))
+		timeout = time.Millisecond
+	}
 	if span := opentracing.SpanFromContext(bo.GetCtx()); span != nil && span.Tracer() != nil {
 		span1 := span.Tracer().StartSpan("regionRequest.SendReqCtx", opentracing.ChildOf(span.Context()))
 		defer span1.Finish()

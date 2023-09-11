@@ -114,7 +114,7 @@ type RegionRequestSender struct {
 }
 
 func (s *RegionRequestSender) String() string {
-	return fmt.Sprintf("{replicaSelector: %v}", s.replicaSelector.String())
+	return fmt.Sprintf("{replicaSelector: %v, rpcError:%v}", s.replicaSelector.String(), s.rpcError)
 }
 
 // RegionRequestRuntimeStats records the runtime stats of send region requests.
@@ -1306,7 +1306,9 @@ func (s *RegionRequestSender) SendReqCtx(
 	err error,
 ) {
 	if req.Type == tikvrpc.CmdCop {
-		log.Info("send req ctx", zap.Duration("timeout", timeout))
+		log.Info("send req ctx",
+			zap.Duration("timeout", timeout),
+			zap.Uint64("region-id", regionID.GetID()))
 		timeout = time.Millisecond
 	}
 	if span := opentracing.SpanFromContext(bo.GetCtx()); span != nil && span.Tracer() != nil {

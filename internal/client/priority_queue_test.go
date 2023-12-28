@@ -21,11 +21,11 @@ import (
 )
 
 type FakeItem struct {
-	pri   int
+	pri   uint64
 	value int
 }
 
-func (f *FakeItem) priority() int {
+func (f *FakeItem) priority() uint64 {
 	return f.pri
 }
 
@@ -33,7 +33,7 @@ func TestPriority(t *testing.T) {
 	re := require.New(t)
 	pq := NewPriorityQueue()
 	for i := 1; i <= 5; i++ {
-		pq.Push(&FakeItem{value: i, pri: i})
+		pq.Push(&FakeItem{value: i, pri: uint64(i)})
 	}
 	re.Equal(5, pq.Len())
 	arr := pq.All()
@@ -41,7 +41,7 @@ func TestPriority(t *testing.T) {
 	pq.Reset()
 	re.Equal(0, pq.Len())
 	for i := 1; i <= 5; i++ {
-		pq.Push(&FakeItem{value: i, pri: i})
+		pq.Push(&FakeItem{value: i, pri: uint64(i)})
 	}
 	for i := pq.Len(); i > 0; i-- {
 		re.Equal(i, pq.Pop().(*FakeItem).value)

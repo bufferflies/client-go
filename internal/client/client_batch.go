@@ -38,6 +38,7 @@ package client
 import (
 	"context"
 	"fmt"
+	"github.com/pingcap/kvproto/pkg/kvrpcpb"
 	"math"
 	"runtime/trace"
 	"sync"
@@ -72,13 +73,103 @@ type batchCommandsEntry struct {
 	err      error
 }
 
-func (b *batchCommandsEntry) isCanceled() bool {
-	return atomic.LoadInt32(&b.canceled) == 1
+type ReqContext interface {
+	GetContext() *kvrpcpb.Context
 }
 
-// TODO: implement by the request priority.
-func (b *batchCommandsEntry) priority() int {
+func (b *batchCommandsEntry) priority() uint64 {
+	cmd := b.req.Cmd
+	switch cmd.(type) {
+	case *tikvpb.BatchCommandsRequest_Request_Get:
+		r := cmd.(*tikvpb.BatchCommandsRequest_Request_Get)
+		return r.Get.GetContext().GetResourceControlContext().GetOverridePriority()
+	case *tikvpb.BatchCommandsRequest_Request_Scan:
+		r := cmd.(*tikvpb.BatchCommandsRequest_Request_Scan)
+		return r.Scan.GetContext().GetResourceControlContext().GetOverridePriority()
+	case *tikvpb.BatchCommandsRequest_Request_Prewrite:
+		r := cmd.(*tikvpb.BatchCommandsRequest_Request_Prewrite)
+		return r.Prewrite.GetContext().GetResourceControlContext().GetOverridePriority()
+	case *tikvpb.BatchCommandsRequest_Request_Commit:
+		r := cmd.(*tikvpb.BatchCommandsRequest_Request_Commit)
+		return r.Commit.GetContext().GetResourceControlContext().GetOverridePriority()
+	case *tikvpb.BatchCommandsRequest_Request_Cleanup:
+		r := cmd.(*tikvpb.BatchCommandsRequest_Request_Cleanup)
+		return r.Cleanup.GetContext().GetResourceControlContext().GetOverridePriority()
+	case *tikvpb.BatchCommandsRequest_Request_BatchGet:
+		r := cmd.(*tikvpb.BatchCommandsRequest_Request_BatchGet)
+		return r.BatchGet.GetContext().GetResourceControlContext().GetOverridePriority()
+	case *tikvpb.BatchCommandsRequest_Request_BatchRollback:
+		r := cmd.(*tikvpb.BatchCommandsRequest_Request_BatchRollback)
+		return r.BatchRollback.GetContext().GetResourceControlContext().GetOverridePriority()
+	case *tikvpb.BatchCommandsRequest_Request_ScanLock:
+		r := cmd.(*tikvpb.BatchCommandsRequest_Request_ScanLock)
+		return r.ScanLock.GetContext().GetResourceControlContext().GetOverridePriority()
+	case *tikvpb.BatchCommandsRequest_Request_ResolveLock:
+		r := cmd.(*tikvpb.BatchCommandsRequest_Request_ResolveLock)
+		return r.ResolveLock.GetContext().GetResourceControlContext().GetOverridePriority()
+	case *tikvpb.BatchCommandsRequest_Request_GC:
+		r := cmd.(*tikvpb.BatchCommandsRequest_Request_GC)
+		return r.GC.GetContext().GetResourceControlContext().GetOverridePriority()
+	case *tikvpb.BatchCommandsRequest_Request_DeleteRange:
+		r := cmd.(*tikvpb.BatchCommandsRequest_Request_DeleteRange)
+		return r.DeleteRange.GetContext().GetResourceControlContext().GetOverridePriority()
+	case *tikvpb.BatchCommandsRequest_Request_RawGet:
+		r := cmd.(*tikvpb.BatchCommandsRequest_Request_RawGet)
+		return r.RawGet.GetContext().GetResourceControlContext().GetOverridePriority()
+	case *tikvpb.BatchCommandsRequest_Request_RawBatchGet:
+		r := cmd.(*tikvpb.BatchCommandsRequest_Request_RawBatchGet)
+		return r.RawBatchGet.GetContext().GetResourceControlContext().GetOverridePriority()
+	case *tikvpb.BatchCommandsRequest_Request_RawPut:
+		r := cmd.(*tikvpb.BatchCommandsRequest_Request_RawPut)
+		return r.RawPut.GetContext().GetResourceControlContext().GetOverridePriority()
+	case *tikvpb.BatchCommandsRequest_Request_RawBatchPut:
+		r := cmd.(*tikvpb.BatchCommandsRequest_Request_RawBatchPut)
+		return r.RawBatchPut.GetContext().GetResourceControlContext().GetOverridePriority()
+	case *tikvpb.BatchCommandsRequest_Request_RawDelete:
+		r := cmd.(*tikvpb.BatchCommandsRequest_Request_RawDelete)
+		return r.RawDelete.GetContext().GetResourceControlContext().GetOverridePriority()
+	case *tikvpb.BatchCommandsRequest_Request_RawBatchDelete:
+		r := cmd.(*tikvpb.BatchCommandsRequest_Request_RawBatchDelete)
+		return r.RawBatchDelete.GetContext().GetResourceControlContext().GetOverridePriority()
+	case *tikvpb.BatchCommandsRequest_Request_RawScan:
+		r := cmd.(*tikvpb.BatchCommandsRequest_Request_RawScan)
+		return r.RawScan.GetContext().GetResourceControlContext().GetOverridePriority()
+	case *tikvpb.BatchCommandsRequest_Request_RawDeleteRange:
+		r := cmd.(*tikvpb.BatchCommandsRequest_Request_RawDeleteRange)
+		return r.RawDeleteRange.GetContext().GetResourceControlContext().GetOverridePriority()
+	case *tikvpb.BatchCommandsRequest_Request_RawBatchScan:
+		r := cmd.(*tikvpb.BatchCommandsRequest_Request_RawBatchScan)
+		return r.RawBatchScan.GetContext().GetResourceControlContext().GetOverridePriority()
+	case *tikvpb.BatchCommandsRequest_Request_Coprocessor:
+		r := cmd.(*tikvpb.BatchCommandsRequest_Request_Coprocessor)
+		return r.Coprocessor.GetContext().GetResourceControlContext().GetOverridePriority()
+	case *tikvpb.BatchCommandsRequest_Request_PessimisticLock:
+		r := cmd.(*tikvpb.BatchCommandsRequest_Request_PessimisticLock)
+		return r.PessimisticLock.GetContext().GetResourceControlContext().GetOverridePriority()
+	case *tikvpb.BatchCommandsRequest_Request_PessimisticRollback:
+		r := cmd.(*tikvpb.BatchCommandsRequest_Request_PessimisticRollback)
+		return r.PessimisticRollback.GetContext().GetResourceControlContext().GetOverridePriority()
+	case *tikvpb.BatchCommandsRequest_Request_CheckTxnStatus:
+		r := cmd.(*tikvpb.BatchCommandsRequest_Request_CheckTxnStatus)
+		return r.CheckTxnStatus.GetContext().GetResourceControlContext().GetOverridePriority()
+	case *tikvpb.BatchCommandsRequest_Request_TxnHeartBeat:
+		r := cmd.(*tikvpb.BatchCommandsRequest_Request_TxnHeartBeat)
+		return r.TxnHeartBeat.GetContext().GetResourceControlContext().GetOverridePriority()
+	case *tikvpb.BatchCommandsRequest_Request_CheckSecondaryLocks:
+		r := cmd.(*tikvpb.BatchCommandsRequest_Request_CheckSecondaryLocks)
+		return r.CheckSecondaryLocks.GetContext().GetResourceControlContext().GetOverridePriority()
+	case *tikvpb.BatchCommandsRequest_Request_FlashbackToVersion:
+		r := cmd.(*tikvpb.BatchCommandsRequest_Request_FlashbackToVersion)
+		return r.FlashbackToVersion.GetContext().GetResourceControlContext().GetOverridePriority()
+	case *tikvpb.BatchCommandsRequest_Request_PrepareFlashbackToVersion:
+		r := cmd.(*tikvpb.BatchCommandsRequest_Request_PrepareFlashbackToVersion)
+		return r.PrepareFlashbackToVersion.GetContext().GetResourceControlContext().GetOverridePriority()
+	}
 	return 0
+}
+
+func (b *batchCommandsEntry) isCanceled() bool {
+	return atomic.LoadInt32(&b.canceled) == 1
 }
 
 func (b *batchCommandsEntry) error(err error) {

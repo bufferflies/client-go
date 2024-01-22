@@ -23,6 +23,18 @@ type Item interface {
 	isCanceled() bool
 }
 
+type PriorityQueue interface {
+	Len() int
+	Push(item Item)
+	Take(n int) []Item
+	HighestPriority() uint64
+	Reset()
+	Clean()
+}
+
+var _ PriorityQueue = &HeapQueue{}
+var _ PriorityQueue = &ArrayQueue{}
+
 // entry is an entry in a priority queue.
 type entry struct {
 	entry Item
@@ -67,48 +79,54 @@ func (ps *prioritySlice) Pop() interface{} {
 	return item
 }
 
-// PriorityQueue is a priority queue.
-type PriorityQueue struct {
+// HeapQueue is a priority queue.
+type HeapQueue struct {
 	ps prioritySlice
 }
 
-// NewPriorityQueue creates a new priority queue.
-func NewPriorityQueue() *PriorityQueue {
-	return &PriorityQueue{}
+// NewHeapQueue creates a new priority queue.
+func NewHeapQueue() *HeapQueue {
+	return &HeapQueue{}
 }
 
 // Len returns the length of the priority queue.
-func (pq *PriorityQueue) Len() int {
+func (pq *HeapQueue) Len() int {
 	return pq.ps.Len()
 }
 
 // Push adds an entry to the priority queue.
-func (pq *PriorityQueue) Push(item Item) {
+func (pq *HeapQueue) Push(item Item) {
 	heap.Push(&pq.ps, entry{entry: item})
 }
 
 // Pop removes the highest priority entry from the priority queue.
-func (pq *PriorityQueue) Pop() Item {
-	return heap.Pop(&pq.ps).(entry).entry
-}
-
-func (pq *PriorityQueue) top() Item {
+func (pq *HeapQueue) Pop() Item {
 	if pq.Len() == 0 {
 		return nil
 	}
-	return pq.ps[0].entry
+	return heap.Pop(&pq.ps).(entry).entry
 }
 
-// All returns all entries in the priority queue not ensure the priority.
-func (pq *PriorityQueue) All() []Item {
-	items := make([]Item, 0, pq.Len())
-	for i := 0; i < pq.Len(); i++ {
-		items = append(items, pq.ps[i].entry)
+func (aq *HeapQueue) Take(n int) []Item {
+	result := make([]Item, 0)
+	for i := 0; i < n; i++ {
+		item := aq.Pop()
+		if item == nil {
+			break
+		}
+		result = append(result, item)
 	}
-	return items
+	return result
 }
 
-func (pq *PriorityQueue) clean() {
+func (pq *HeapQueue) HighestPriority() uint64 {
+	if pq.Len() == 0 {
+		return 0
+	}
+	return pq.ps[0].entry.priority()
+}
+
+func (pq *HeapQueue) Clean() {
 	for i := 0; i < pq.Len(); i++ {
 		if pq.ps[i].entry.isCanceled() {
 			heap.Remove(&pq.ps, pq.ps[i].index)
@@ -117,9 +135,88 @@ func (pq *PriorityQueue) clean() {
 }
 
 // Reset clear all entry in the queue.
-func (pq *PriorityQueue) Reset() {
+func (pq *HeapQueue) Reset() {
 	for i := 0; i < pq.Len(); i++ {
 		pq.ps[i].entry = nil
 	}
 	pq.ps = pq.ps[:0]
+}
+
+// ArrayQueue is a priority queue implemented by array.
+type ArrayQueue struct {
+	cache [][]Item
+	count int
+}
+
+func NewArrayQueue() *ArrayQueue {
+	cache := make([][]Item, 0)
+	return &ArrayQueue{cache: cache}
+}
+
+func (aq *ArrayQueue) Len() int {
+	return aq.count
+}
+
+func (aq *ArrayQueue) Push(item Item) {
+	pri := int(item.priority())
+	if pri >= len(aq.cache) {
+		aq.resize(pri)
+	}
+	if aq.cache[pri] == nil {
+		aq.cache[pri] = make([]Item, 0)
+	}
+	aq.cache[pri] = append(aq.cache[pri], item)
+	aq.count++
+}
+
+func (aq *ArrayQueue) Take(n int) []Item {
+	high := len(aq.cache) - 1
+	result := make([]Item, 0)
+	for i := high; i >= 0 && n > 0; i-- {
+		list := aq.cache[i]
+		acquire := n
+		if n > len(list) {
+			acquire = len(list)
+		}
+		n -= acquire
+		aq.count -= acquire
+		result = append(result, list[:acquire]...)
+		aq.cache[i] = aq.cache[i][acquire:]
+	}
+	return result
+}
+
+func (aq *ArrayQueue) HighestPriority() uint64 {
+	for i := len(aq.cache) - 1; i >= 0; i-- {
+		if len(aq.cache[i]) > 0 {
+			return uint64(i)
+		}
+	}
+	return 0
+}
+
+func (aq *ArrayQueue) Reset() {
+	aq.cache = aq.cache[:0]
+}
+
+func (aq *ArrayQueue) resize(max int) {
+	cap := max + 1 - len(aq.cache)
+	if cap < 0 {
+		return
+	}
+	arr := make([][]Item, cap)
+	aq.cache = append(aq.cache, arr...)
+}
+
+func (aq *ArrayQueue) Clean() {
+	for i := 0; i < len(aq.cache); i++ {
+		if aq.cache[i] == nil || len(aq.cache[i]) == 0 {
+			continue
+		}
+		j := 0
+		for ; j < len(aq.cache[i]) && aq.cache[i][j].isCanceled(); j++ {
+		}
+		aq.count -= j
+		aq.cache[i] = aq.cache[i][j:]
+	}
 }

@@ -92,7 +92,7 @@ type batchCommandsBuilder struct {
 	// Each BatchCommandsRequest_Request sent to a store has a unique identity to
 	// distinguish its response.
 	idAlloc    uint64
-	entries    *PriorityQueue
+	entries    PriorityQueue
 	requests   []*tikvpb.BatchCommandsRequest_Request
 	requestIDs []uint64
 	// In most cases, there isn't any forwardingReq.
@@ -110,12 +110,7 @@ func (b *batchCommandsBuilder) push(entry *batchCommandsEntry) {
 const highTaskPriority = 10
 
 func (b *batchCommandsBuilder) hasHighPriorityTask() bool {
-	item := b.entries.top()
-	if item == nil {
-		return false
-	}
-
-	return item.priority() >= highTaskPriority
+	return b.entries.HighestPriority() >= highTaskPriority
 }
 
 // buildWithLimit builds BatchCommandsRequests and calls collect() for each valid entry.
@@ -123,37 +118,44 @@ func (b *batchCommandsBuilder) hasHighPriorityTask() bool {
 // The second is a map that maps forwarded hosts to requests.
 func (b *batchCommandsBuilder) buildWithLimit(limit int64, collect func(id uint64, e *batchCommandsEntry),
 ) (*tikvpb.BatchCommandsRequest, map[string]*tikvpb.BatchCommandsRequest) {
-	pending := b.entries.Len()
-	for count, i := int64(0), 0; i < pending; i++ {
-		e := b.entries.Pop().(*batchCommandsEntry)
-		if e.isCanceled() {
-			continue
-		}
-		if e.priority() < highTaskPriority {
-			count++
-			if count > limit {
-				b.push(e)
-				break
+	count := int64(0)
+	build := func(reqs []Item) {
+		for _, e := range reqs {
+			e := e.(*batchCommandsEntry)
+			if e.isCanceled() {
+				continue
 			}
-		}
+			if e.priority() < highTaskPriority {
+				count++
+			}
 
-		if collect != nil {
-			collect(b.idAlloc, e)
-		}
-		if e.forwardedHost == "" {
-			b.requestIDs = append(b.requestIDs, b.idAlloc)
-			b.requests = append(b.requests, e.req)
-		} else {
-			batchReq, ok := b.forwardingReqs[e.forwardedHost]
-			if !ok {
-				batchReq = &tikvpb.BatchCommandsRequest{}
-				b.forwardingReqs[e.forwardedHost] = batchReq
+			if collect != nil {
+				collect(b.idAlloc, e)
 			}
-			batchReq.RequestIds = append(batchReq.RequestIds, b.idAlloc)
-			batchReq.Requests = append(batchReq.Requests, e.req)
+			if e.forwardedHost == "" {
+				b.requestIDs = append(b.requestIDs, b.idAlloc)
+				b.requests = append(b.requests, e.req)
+			} else {
+				batchReq, ok := b.forwardingReqs[e.forwardedHost]
+				if !ok {
+					batchReq = &tikvpb.BatchCommandsRequest{}
+					b.forwardingReqs[e.forwardedHost] = batchReq
+				}
+				batchReq.RequestIds = append(batchReq.RequestIds, b.idAlloc)
+				batchReq.Requests = append(batchReq.Requests, e.req)
+			}
+			b.idAlloc++
 		}
-		b.idAlloc++
 	}
+
+	if b.entries.HighestPriority() >= highTaskPriority && limit == 0 {
+		limit = 1
+	}
+	for count < limit && b.entries.Len() > 0 {
+		reqs := b.entries.Take(int(limit))
+		build(reqs)
+	}
+
 	var req *tikvpb.BatchCommandsRequest
 	if len(b.requests) > 0 {
 		req = &tikvpb.BatchCommandsRequest{
@@ -164,18 +166,10 @@ func (b *batchCommandsBuilder) buildWithLimit(limit int64, collect func(id uint6
 	return req, b.forwardingReqs
 }
 
-// cancel all requests, only used in test.
-func (b *batchCommandsBuilder) cancel(e error) {
-	for _, entry := range b.entries.All() {
-		entry.(*batchCommandsEntry).error(e)
-	}
-	b.entries.Reset()
-}
-
 // reset resets the builder to the initial state.
 // Should call it before collecting a new batch.
 func (b *batchCommandsBuilder) reset() {
-	b.entries.clean()
+	b.entries.Clean()
 	// NOTE: We can't simply set entries = entries[:0] here.
 	// The data in the cap part of the slice would reference the prewrite keys whose
 	// underlying memory is borrowed from memdb. The reference cause GC can't release
@@ -194,7 +188,7 @@ func (b *batchCommandsBuilder) reset() {
 func newBatchCommandsBuilder(maxBatchSize uint) *batchCommandsBuilder {
 	return &batchCommandsBuilder{
 		idAlloc:        0,
-		entries:        NewPriorityQueue(),
+		entries:        NewArrayQueue(),
 		requests:       make([]*tikvpb.BatchCommandsRequest_Request, 0, maxBatchSize),
 		requestIDs:     make([]uint64, 0, maxBatchSize),
 		forwardingReqs: make(map[string]*tikvpb.BatchCommandsRequest),
